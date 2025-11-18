@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 
 RUN cd /tmp && git clone https://github.com/facebookresearch/Starspace.git . && \
   curl -LO https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.gz && \
-  tar -xzvf boost_1_83_0.tar.gz && \
+  tar -xzf boost_1_83_0.tar.gz && \
   make -e BOOST_DIR=boost_1_83_0 && \
   make embed_doc -e BOOST_DIR=boost_1_83_0 &&  \
   mv starspace /opt/starspace/starspace && \
