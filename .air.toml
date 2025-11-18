@@ -1,0 +1,3 @@
+# Reload on changes except .git and vendor
+root = "."
+tmp_dir = "tmp"

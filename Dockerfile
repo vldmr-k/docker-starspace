@@ -1,0 +1,56 @@
+FROM ubuntu:22.04 AS starspace
+
+WORKDIR /opt/starspace
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+  git \
+  build-essential \
+  cmake \
+  curl \
+  zip \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN cd /tmp && git clone https://github.com/facebookresearch/Starspace.git . && \
+  curl -LO https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.gz && \
+  tar -xzvf boost_1_83_0.tar.gz && \
+  make -e BOOST_DIR=boost_1_83_0 && \
+  make embed_doc -e BOOST_DIR=boost_1_83_0 &&  \
+  mv starspace /opt/starspace/starspace && \
+  mv embed_doc /opt/starspace/embed_doc
+
+FROM golang:1.25 AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY *.go ./
+
+FROM builder AS prod
+
+WORKDIR /app
+
+# Run the binar
+COPY --from=starspace /opt/starspace /opt/starspace
+#COPY --from=pre-prod /app/main /app/main
+RUN go build  -o /app/main /app/main.go
+
+
+EXPOSE 8000
+
+CMD ["/app/main"]
+
+FROM builder AS dev
+
+COPY --from=starspace /opt/starspace /opt/starspace
+
+# Install Air (hot reload)
+RUN go install github.com/air-verse/air@latest
+
+WORKDIR /app
+
+COPY . .
+
+CMD ["air"]
