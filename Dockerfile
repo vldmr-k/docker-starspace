@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 AS starspace
+FROM bitnami/minideb AS starspace
 
 WORKDIR /opt/starspace
 
@@ -28,15 +28,20 @@ RUN go mod download
 
 COPY *.go ./
 
-FROM builder AS prod
+FROM builder AS pre-prod
 
 WORKDIR /app
 
-# Run the binar
-COPY --from=starspace /opt/starspace /opt/starspace
 #COPY --from=pre-prod /app/main /app/main
 RUN go build  -o /app/main /app/main.go
 
+FROM bitnami/minideb AS prod
+
+WORKDIR /app 
+
+
+COPY --from=pre-prod /app/main .
+COPY --from=starspace /opt /opt
 
 EXPOSE 8000
 

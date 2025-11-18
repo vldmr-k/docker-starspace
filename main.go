@@ -47,9 +47,6 @@ func main() {
 		STARSPACE_EMBED_DOC_PATH: STARSPACE_PATH + "/embed_doc",
 	}
 
-	row := conn.QueryRow("SELECT * FROM embeddings")
-	fmt.Println(row)
-
 	e.GET("/recomended", func(c echo.Context) error {
 		phrase := c.QueryParam("phrase")
 
@@ -320,7 +317,6 @@ func (sp *StarSpace) GenerateEmbeddings() error {
 		item := record[0]
 
 		embeddings, err := sp.FindEmbeddings(item)
-		fmt.Println(item, embeddings)
 		if err != nil {
 			log.Printf("warning: failed to find embeddings for '%s': %v", item, err)
 			continue
