@@ -29,18 +29,6 @@ const (
 	DATA_PATH = "/data"
 )
 
-func check(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func checklog(err error) {
-	if err != nil {
-		fmt.Println(err)
-	}
-}
-
 func main() {
 	e := echo.New()
 
@@ -104,6 +92,14 @@ func main() {
 			"message": "Body saved successfully",
 			"file":    tmpFile.Name(),
 		})
+	})
+
+	e.GET("/health", func(c echo.Context) error {
+		// err := dbm.DB.Ping()
+		// if err != nil {
+		// 	c.String(http.StatusBadRequest, err.Error())
+		// }
+		return c.String(http.StatusOK, "ok")
 	})
 	e.Logger.Fatal(e.Start(":8000"))
 }
@@ -351,4 +347,10 @@ func (sp *StarSpace) GenerateEmbeddings() error {
 	sp.DBManager.SyncMemoryToPersistence(memconn)
 
 	return nil
+}
+
+func check(err error) {
+	if err != nil {
+		panic(err)
+	}
 }

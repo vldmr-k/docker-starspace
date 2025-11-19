@@ -39,11 +39,12 @@ FROM bitnami/minideb AS prod
 
 WORKDIR /app 
 
-
 COPY --from=pre-prod /app/main .
 COPY --from=starspace /opt /opt
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=30s --start-period=10s --retries=5 CMD ["curl", "-f", "http://localhost:8000/health"]
 
 CMD ["/app/main"]
 
