@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -28,15 +29,27 @@ const (
 	DATA_PATH = "/data"
 )
 
+func check(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func checklog(err error) {
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
 func main() {
 	e := echo.New()
 
 	dbm := &DBManager{
-		DB_PATH: DATA_PATH + "/embeddings.duckdb",
+		DB_PATH: fmt.Sprintf("%s/%s", DATA_PATH, "embeddings"),
 	}
 
-	conn, _ := dbm.Open()
-	dbm.Setup(conn)
+	_, err := dbm.Open()
+	check(err)
 
 	sp := StarSpace{
 		DBManager: dbm,
@@ -98,8 +111,6 @@ func main() {
 type DBManager struct {
 	DB_PATH string
 	DB      *sql.DB
-
-	DB_MEMORY *sql.DB
 }
 
 func (dbm *DBManager) Open() (*sql.DB, error) {
@@ -112,30 +123,52 @@ func (dbm *DBManager) Open() (*sql.DB, error) {
 	return db, err
 }
 
-func (DBManager *DBManager) OpenMemory() *sql.DB {
-	db, err := sql.Open("duckdb", ":memory:")
-	DBManager.Setup(db)
+func (dbm *DBManager) Close() error {
+	return dbm.DB.Close()
+}
+
+func (dbm *DBManager) OpenMemory() *sql.DB {
+	db, err := sql.Open("duckdb", "")
+	dbm.Setup(db)
 	if err != nil {
 		log.Fatal(err)
 	}
 	return db
 }
 
-func (DBManager *DBManager) SyncMemoryToPersistence(memory *sql.DB) error {
-	_, err := memory.Exec(`ATTACH '/data/embeddings_2.duckdb';
-			COPY FROM DATABASE memory TO embeddings;
-			DETACH embeddings;
-	`)
+func (dbm *DBManager) SyncMemoryToPersistence(memconn *sql.DB) {
+	tmpDBPath := dbm.DB_PATH + "_tmp"
+	dbname := filepath.Base(dbm.DB_PATH)
 
-	return err
+	fmt.Println("Create new empty database", tmpDBPath)
+	_, err := memconn.Exec(fmt.Sprintf("ATTACH '%s' as %s;", tmpDBPath, dbname))
+	check(err)
+
+	fmt.Println("Copy memory db to", dbname)
+	_, err = memconn.Exec(fmt.Sprintf("COPY FROM DATABASE memory TO %s", dbname))
+	check(err)
+
+	fmt.Println("Close memory db")
+	err = memconn.Close()
+	check(err)
+
+	//close current db
+	fmt.Println("Close current persistence db")
+	err = dbm.Close()
+	check(err)
+
+	//rename tmp db to persistence
+	fmt.Println("Rename file db from", tmpDBPath, "to", dbm.DB_PATH)
+	err = os.Rename(tmpDBPath, dbm.DB_PATH)
+	check(err)
+
+	//reopen new db
+	fmt.Println("Reopen db", dbm.DB_PATH)
+	_, err = dbm.Open()
+	check(err)
 }
 
-// func (DBManager *DBManager) syncToPersistence(memory *sql.DB) (sql.Result, error) {
-// 	return memory.Exec(`.backup ` + EMBEDDINGS_SQLITE_DB_PATH)
-// }
-
 func (DBManager *DBManager) Setup(conn *sql.DB) {
-
 	_, err := conn.Exec(`INSTALL vss; LOAD vss;`)
 	if err != nil {
 		fmt.Println(err.Error())
@@ -174,8 +207,6 @@ func (DBManager *DBManager) Search(queryVec []float32, limit int) ([]Record, err
 		records = append(records, *record)
 	}
 
-	fmt.Println(records)
-
 	return records, err
 }
 
@@ -204,6 +235,7 @@ func (sp *StarSpace) Process(newDataset string) error {
 }
 
 func (sp *StarSpace) FindEmbeddings(phrase string) ([]float32, error) {
+	phrase = fmt.Sprintf("%q", phrase)
 	// Build the full shell pipeline
 	cmdText := fmt.Sprintf(`echo "%s" | %s %s | tail -1 | tr ' ' ','`, phrase, sp.STARSPACE_EMBED_DOC_PATH, sp.MODEL_PATH)
 
@@ -286,26 +318,14 @@ func (sp *StarSpace) GenerateEmbeddings() error {
 		return fmt.Errorf("failed reading tsv: %w", err)
 	}
 
-	conn := sp.DBManager.DB
-
-	// Begin transaction
-	tx, err := conn.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-
-	_, err = tx.Exec("DELETE FROM embeddings;")
-	if err != nil {
-		fmt.Println("error clean db", err.Error())
-	}
+	memconn := sp.DBManager.OpenMemory()
+	defer memconn.Close()
 
 	// Prepare statement inside transaction
-	stmt, err := tx.Prepare(`
-		INSERT INTO embeddings (item, embedding, updated) VALUES (?, ?, now()) 
-		ON CONFLICT DO UPDATE SET embedding = EXCLUDED.embedding, updated = now();
+	stmt, err := memconn.Prepare(`
+		INSERT INTO embeddings (item, embedding, updated) VALUES (?, ?, now());
 	`)
 	if err != nil {
-		tx.Rollback()
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
 	defer stmt.Close()
@@ -328,11 +348,7 @@ func (sp *StarSpace) GenerateEmbeddings() error {
 		}
 	}
 
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
+	sp.DBManager.SyncMemoryToPersistence(memconn)
 
 	return nil
 }

@@ -9,12 +9,12 @@ CPUS := 0.7
 build:
 	docker build --target dev -t $(IMAGE_NAME) .
 
-run: build
+start: build
 	docker run -d \
 		--name $(CONTAINER_NAME) \
 		--cpus="$(CPUS)" \
 		-v "$(PWD)":/app \
-		-v /tmp/starspace:/data \
+		-v ./data:/data \
 		-p $(HOST_PORT):$(CONTAINER_PORT) \
 		$(IMAGE_NAME)
 
@@ -22,4 +22,4 @@ stop:
 	docker stop $(CONTAINER_NAME) || true
 	docker rm $(CONTAINER_NAME) || true
 
-restart: stop run
+restart: stop start
